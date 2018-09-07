@@ -3,6 +3,8 @@
 #include <vision/BeaconDetector.h>
 #include <vision/Logging.h>
 #include <iostream>
+#include <math.h>
+
 
 ImageProcessor::ImageProcessor(VisionBlocks& vblocks, const ImageParams& iparams, Camera::Type camera) :
   vblocks_(vblocks), iparams_(iparams), camera_(camera), cmatrix_(iparams_, camera)
@@ -123,16 +125,190 @@ void ImageProcessor::processFrame(){
   tlog(30, "Classifying Image: %i", camera_);
   if(!color_segmenter_->classifyImage(color_table_)) return;
   detectBall();
+  detectGoal();
   beacon_detector_->findBeacons();
 }
 
 void ImageProcessor::detectBall() {
+  int imageX, imageY;
+  //if(!findBall(imageX, imageY)) return;
+  findBall(imageX,imageY);
+  WorldObject* ball = &vblocks_.world_object->objects_[WO_BALL];
+
+  ball->imageCenterX = imageX;
+  ball->imageCenterY = imageY;
+
+  Position p = cmatrix_.getWorldPosition(imageX, imageY);
+  ball->visionBearing = cmatrix_.bearing(p);
+  ball->visionElevation = cmatrix_.elevation(p);
+  ball->visionDistance = cmatrix_.groundDistance(p);
+  if(imageX>0 && imageY>0)
+    {ball->seen = true; cout<<"ball seen "<<imageX<<" "<<imageY<<" Camera: "<<camera_;}
+  else
+    {ball->seen = false;}
 }
 
-void ImageProcessor::findBall(int& imageX, int& imageY) {
+
+int ImageProcessor::findBall(int& imageX, int& imageY) {
   imageX = imageY = 0;
+  int thresh;
+  int total = 0;
+  double xval=0;
+  double yval = 0;
+  int top_thresh = 200;
+  int bottom_thresh = 90;
+
+  // Process from left to right
+  for(int x = 0; x < iparams_.width; x++) {
+  // Process from top to bottom
+    for(int y = 0; y < iparams_.height; y++) {
+      // Retrieve the segmented color of the pixel at (x,y)
+      auto c = getSegImg()[y * iparams_.width + x];
+      if(c == c_ORANGE)
+      {
+        total++;
+        xval+=x;
+        yval+=y;
+      }
+      }
+      }
+  xval = xval/total;
+  yval = yval/total;
+  //std::cout<<xval/total<<","<<yval/total<<endl;
+
+  //------- THRESH VALUE IS PRINTED HERE -----
+  bool calib = true; //set true if you want to calibrate
+
+  if(calib)
+  {
+    std::cout<<"The number of orange in ";
+
+    if(camera_ == Camera::TOP)
+    { 
+      thresh = top_thresh;
+      cout<<"top camera is : ";
+    }
+    else if(camera_ == Camera::BOTTOM)
+    {
+      thresh = bottom_thresh;
+      cout<<"bottom camera is : ";
+    }
+
+  cout<<total<<endl;
+  }
+
+  // ----- THRESHOLDING DONE HERE -----------
+  if (total>thresh){
+   
+    imageX = xval;
+    imageY = yval;
+
+    
+    if (camera_ == Camera::BOTTOM)
+    {
+      imageX = xval*4;
+      imageY = yval*4;
+    }
+    /*if (camera_ == Camera::TOP)
+    {
+      imageX = -1;
+      imageY = -1;
+    }*/
+    cout<<"x :: "<<imageX<<", y :: "<<imageY<<endl;
+    return 1;
+  }
+
+  else {
+    imageX = -1;
+    imageY = -1;
+    return 0;
+  }
+} 
+
+void ImageProcessor::detectGoal() {
+  int imageX, imageY;
+  //if(!findBall(imageX, imageY)) return;
+  findGoal(imageX,imageY);
+  WorldObject* goal = &vblocks_.world_object->objects_[WO_OWN_GOAL];
+
+  goal->imageCenterX = imageX;
+  goal->imageCenterY = imageY;
+
+  Position p = cmatrix_.getWorldPosition(imageX, imageY);
+  goal->visionBearing = cmatrix_.bearing(p);
+  goal->visionElevation = cmatrix_.elevation(p);
+  goal->visionDistance = cmatrix_.groundDistance(p);
+  if(imageX!=0 && imageY!=0)
+    {goal->seen = true;}
+  else
+    {goal->seen = false;}
 }
 
+int ImageProcessor::findGoal(int& imageX, int& imageY) {
+  imageX = imageY = 0;
+  int thresh;
+  int total = 0;
+  double xval=0;
+  double yval = 0;
+  int top_thresh = 10000;
+  int bottom_thresh = 10000;
+
+  // Process from left to right
+  for(int x = 0; x < iparams_.width; x++) {
+  // Process from top to bottom
+    for(int y = 0; y < iparams_.height; y++) {
+      // Retrieve the segmented color of the pixel at (x,y)
+      auto c = getSegImg()[y * iparams_.width + x];
+      if(c == c_BLUE)
+      {
+        total++;
+        xval+=x;
+        yval+=y;
+      }
+      }
+      }
+  xval = xval/total;
+  yval = yval/total;
+  //std::cout<<xval/total<<","<<yval/total<<endl;
+
+//------- THRESH VALUE IS PRINTED HERE -----
+bool calib = true; //set true if you want to calibrate
+
+if(calib)
+{
+  //std::cout<<"The number of blue in ";
+
+  if(camera_ == Camera::TOP)
+  { 
+    thresh = top_thresh;
+    //cout<<"top camera is : ";
+  }
+  else if(camera_ == Camera::BOTTOM)
+  {
+    thresh = bottom_thresh;
+    //cout<<"bottom camera is : ";
+  }
+}
+
+// ----- THRESHOLDING DONE HERE -----------
+if (total>thresh){
+ 
+  imageX = xval;
+  imageY = yval;
+
+  
+  if (camera_ == Camera::BOTTOM)
+  {
+    imageX = xval*4;
+    imageY = yval*4;
+  }
+  //cout<<"x :: "<<imageX<<", y :: "<<imageY<<endl;
+  return 1;}
+
+ else {
+  return 0;}
+
+}
 
 int ImageProcessor::getTeamColor() {
   return vblocks_.robot_state->team_;
